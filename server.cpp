@@ -21,7 +21,7 @@ bool abortRequested = false;
 int create_socket = -1;
 int new_socket = -1;
 
-void clientCommunication(int* data);
+void clientCommunication(int* data, std::string mailSpoolDir);
 
 void signalHandler(int sig);
 
@@ -48,6 +48,7 @@ int main(int argc, char* argv[])
         return 1;
     }
     int port = std::atoi(argv[1]);
+    std::string mailSpoolDir = argv[2];
 
     socklen_t address_length;
     sockaddr_in address, client_address;
@@ -112,7 +113,7 @@ int main(int argc, char* argv[])
         }
 
         std::cout << "Client connected from " << inet_ntoa(client_address.sin_addr) << ":" << ntohs(client_address.sin_port) << "...\n";
-        clientCommunication(&new_socket);
+        clientCommunication(&new_socket, mailSpoolDir);
         new_socket = -1;
     }
 
@@ -129,7 +130,7 @@ int main(int argc, char* argv[])
     return EXIT_SUCCESS;
 }
 
-void clientCommunication(int* data)
+void clientCommunication(int* data, std::string mailSpoolDir)
 {
     char buffer[BUF];
     //int* current_socket = (int*) data;
@@ -170,7 +171,7 @@ void clientCommunication(int* data)
 
         buffer[totalBytesRecv] = '\0';
         std::cout << "Message received: " << buffer << "\n";
-        std::string path = "./users";
+        std::string path = mailSpoolDir + "/users";
         createDirectory(path);
         std::string s_answer = messageHandler(buffer);
         if (s_answer != "QUIT") {
@@ -178,7 +179,7 @@ void clientCommunication(int* data)
             int totalBytesSent = 0;
             int bytesLeftSent = BUF;
             int bytesSent;
-            
+
             int answerLength = strlen(answer);
             send(*data, &answerLength, sizeof(int), 0);
 
