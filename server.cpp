@@ -25,29 +25,32 @@ void clientCommunication(int* data, std::string mailSpoolDir);
 
 void signalHandler(int sig);
 
-std::string messageHandler(char* buffer);
+std::string messageHandler(char* buffer, std::string mailSpoolDir);
 
 int createDirectory(std::string& path);
 
-int clientSend(char* message);
+int clientSend(char* message, std::string mailSpoolDir);
 
-std::string clientList(char* message);
+std::string clientList(char* message, std::string mailSpoolDir);
 
 void clientRead();
 
 void clientDel();
 
-std::string listSubjects(std::string& username);
+std::string listSubjects(std::string& username, std::string mailSpoolDir);
 
 ///////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char* argv[])
 {
     if (argc != 3) {
-        std::cout << "Usage: ./twmailer-server <port> <mail-spool-directoryname>\n";
+        std::cout << "Usage: " << argv[0] << "<port> <mail-spool-directoryname>\n";
         return 1;
     }
     int port = std::atoi(argv[1]);
+    if (port == 0) {
+        return 1;
+    }
     std::string mailSpoolDir = argv[2];
 
     socklen_t address_length;
@@ -173,7 +176,7 @@ void clientCommunication(int* data, std::string mailSpoolDir)
         std::cout << "Message received: " << buffer << "\n";
         std::string path = mailSpoolDir + "/users";
         createDirectory(path);
-        std::string s_answer = messageHandler(buffer);
+        std::string s_answer = messageHandler(buffer, mailSpoolDir);
         if (s_answer != "QUIT") {
             const char* answer = s_answer.c_str();
             int totalBytesSent = 0;
@@ -206,7 +209,7 @@ void clientCommunication(int* data, std::string mailSpoolDir)
     }
 }
 
-std::string messageHandler(char* buffer)
+std::string messageHandler(char* buffer, std::string mailSpoolDir)
 {
     std::string option;
     for (int i = 0; buffer[i] != '\0'; ++i) {
@@ -214,13 +217,13 @@ std::string messageHandler(char* buffer)
             option += buffer[i];
         } else {
             if (option == "SEND") {
-                if (clientSend(buffer)) {
+                if (clientSend(buffer, mailSpoolDir)) {
                     return "ERR\n";
                 } else {
                     return "OK\n";
                 }
             } else if (option == "LIST") {
-                return clientList(buffer);
+                return clientList(buffer, mailSpoolDir);
             } else if (option == "READ") {
                 clientRead();
             } else if (option == "DEL") {
@@ -257,7 +260,7 @@ int createDirectory(std::string& pathname)
     return 0;
 }
 
-int clientSend(char* message)
+int clientSend(char* message, std::string mailSpoolDir)
 {
     std::string line, path_receiver, subject;
     //std::string sender, path_sender;
@@ -285,7 +288,7 @@ int clientSend(char* message)
                     break;
                 case 2:
                     //Receiver
-                    path_receiver = "./user/" + line;
+                    path_receiver = mailSpoolDir + line;
                     if (createDirectory(path_receiver)) {
                         return 1;
                     }
@@ -321,9 +324,9 @@ int clientSend(char* message)
     return 0;
 }
 
-std::string listSubjects(std::string& username)
+std::string listSubjects(std::string& username, std::string mailSpoolDir)
 {
-    std::string s_path = "./users/" + username;
+    std::string s_path = mailSpoolDir + username;
     const char* path = s_path.c_str();
     DIR* dirp = opendir(path);
     if (dirp == NULL) {
@@ -345,7 +348,7 @@ std::string listSubjects(std::string& username)
     return output;
 }
 
-std::string clientList(char* message)
+std::string clientList(char* message, std::string mailSpoolDir)
 {
     std::string line, username;
     //std::ofstream file;
@@ -365,7 +368,7 @@ std::string clientList(char* message)
                 case 1:
                     //Sender
                     username = line;
-                    return listSubjects(username);
+                    return listSubjects(username, mailSpoolDir);
             }
             line.clear();
         }
