@@ -1,22 +1,21 @@
-#include <string>
-#include <sstream>
-#include <iostream>
-#include <string>
-#include <cstring>
-#include <csignal>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <sys/stat.h>
-#include <netinet/in.h>
 #include <arpa/inet.h>
-#include <unistd.h>
-#include <fstream>
+#include <csignal>
+#include <cstdlib> // für std::atoi
+#include <cstring>
 #include <dirent.h>
 #include <errno.h>
+#include <fstream>
+#include <iostream>
+#include <netinet/in.h>
+#include <sstream>
+#include <string>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 #include <vector>
 
 #define BUF 1024
-#define PORT 6543
 
 bool abortRequested = false;
 int create_socket = -1;
@@ -42,10 +41,16 @@ std::string listSubjects(std::string& username);
 
 ///////////////////////////////////////////////////////////////////////////////
 
-int main(void)
+int main(int argc, char* argv[])
 {
-    socklen_t addrlen;
-    sockaddr_in address, cliaddress;
+    if (argc != 3) {
+        std::cout << "Usage: ./twmailer-server <port> <mail-spool-directoryname>\n";
+        return 1;
+    }
+    int port = std::atoi(argv[1]);
+
+    socklen_t address_length;
+    sockaddr_in address, client_address;
     int reuseValue = 1;
 
     if (signal(SIGINT, signalHandler) == SIG_ERR) {
@@ -79,7 +84,7 @@ int main(void)
     memset(&address, 0, sizeof(address));
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(PORT);
+    address.sin_port = htons(port);
 
     if (bind(create_socket, (struct sockaddr*) &address, sizeof(address)) == -1) {
         std::perror("bind error");
@@ -94,10 +99,10 @@ int main(void)
     while (!abortRequested) {
         std::cout << "Waiting for connections...\n";
 
-        addrlen = sizeof(struct sockaddr_in);
+        address_length = sizeof(struct sockaddr_in);
         if ((new_socket = accept(create_socket,
-                (struct sockaddr*) &cliaddress,
-                &addrlen)) == -1) {
+                (struct sockaddr*) &client_address,
+                &address_length)) == -1) {
             if (abortRequested) {
                 std::perror("accept error after aborted");
             } else {
@@ -106,7 +111,7 @@ int main(void)
             break;
         }
 
-        std::cout << "Client connected from " << inet_ntoa(cliaddress.sin_addr) << ":" << ntohs(cliaddress.sin_port) << "...\n";
+        std::cout << "Client connected from " << inet_ntoa(client_address.sin_addr) << ":" << ntohs(client_address.sin_port) << "...\n";
         clientCommunication(&new_socket);
         new_socket = -1;
     }
@@ -127,41 +132,64 @@ int main(void)
 void clientCommunication(int* data)
 {
     char buffer[BUF];
-    int size;
     //int* current_socket = (int*) data;
 
-    strcpy(buffer, "Welcome to myserver!\r\nPlease enter your commands...\r\n");
+    strcpy(buffer, "Welcome to the Mail-server!\nPlease enter your commands...\n");
     if (send(*data, buffer, strlen(buffer), 0) == -1) {
         std::perror("send failed");
         return;
     }
 
     do {
-        size = recv(*data, buffer, BUF - 1, 0);
-        if (size == -1) {
-            if (abortRequested) {
-                std::perror("recv error after aborted");
-            } else {
-                std::perror("recv error");
+        int totalBytesRecv = 0;
+        int bytesLeftRecv = BUF;
+        int bytesRecv;
+
+        int messageLength;
+        recv(*data, &messageLength, sizeof(int), 0);
+
+        while (totalBytesRecv < messageLength) {
+            bytesRecv = recv(*data, buffer + totalBytesRecv, bytesLeftRecv, 0);
+            if (bytesRecv == -1) {
+                if (abortRequested) {
+                    std::perror("recv error after aborted");
+                } else {
+                    std::perror("recv error");
+                }
+                break;
             }
-            break;
+
+            if (bytesRecv == 0) {
+                std::cout << "Client closed remote socket\n";
+                break;
+            }
+
+            totalBytesRecv += bytesRecv;
+            bytesLeftRecv -= bytesRecv;
         }
 
-        if (size == 0) {
-            std::cout << "Client closed remote socket\n";
-            break;
-        }
-
-        buffer[size] = '\0';
+        buffer[totalBytesRecv] = '\0';
         std::cout << "Message received: " << buffer << "\n";
         std::string path = "./users";
         createDirectory(path);
         std::string s_answer = messageHandler(buffer);
-        if(s_answer != "QUIT"){
+        if (s_answer != "QUIT") {
             const char* answer = s_answer.c_str();
-            if (send(*data, answer, 3, 0) == -1) {
-                std::perror("send answer failed");
-                return;
+            int totalBytesSent = 0;
+            int bytesLeftSent = BUF;
+            int bytesSent;
+            
+            int answerLength = strlen(answer);
+            send(*data, &answerLength, sizeof(int), 0);
+
+            while (totalBytesSent < answerLength) {
+                bytesSent = send(*data, answer + totalBytesSent, bytesLeftSent, 0);
+                if (bytesSent == -1) {
+                    std::perror("send answer failed");
+                    return;
+                }
+                totalBytesSent += bytesSent;
+                bytesLeftSent -= bytesSent;
             }
         }
     } while (strcmp(buffer, "QUIT") != 0 && !abortRequested);
