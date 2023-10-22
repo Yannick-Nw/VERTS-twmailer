@@ -11,6 +11,9 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <fstream>
+#include <dirent.h>
+#include <errno.h>
+#include <vector>
 
 #define BUF 1024
 #define PORT 6543
@@ -23,19 +26,19 @@ void clientCommunication(int* data);
 
 void signalHandler(int sig);
 
-const char* messageHandler(char* buffer);
+std::string messageHandler(char* buffer);
 
 int createDirectory(std::string& path);
 
 int clientSend(char* message);
 
-const char* clientList(char* message);
+std::string clientList(char* message);
 
 void clientRead();
 
 void clientDel();
 
-void clientQuit();
+std::string listSubjects(std::string& username);
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -153,12 +156,15 @@ void clientCommunication(int* data)
         std::cout << "Message received: " << buffer << "\n";
         std::string path = "./users";
         createDirectory(path);
-        const char* answer = messageHandler(buffer);
-        if (send(*data, answer, 3, 0) == -1) {
-            std::perror("send answer failed");
-            return;
+        std::string s_answer = messageHandler(buffer);
+        if(s_answer != "QUIT"){
+            const char* answer = s_answer.c_str();
+            if (send(*data, answer, 3, 0) == -1) {
+                std::perror("send answer failed");
+                return;
+            }
         }
-    } while (strcmp(buffer, "quit") != 0 && !abortRequested);
+    } while (strcmp(buffer, "QUIT") != 0 && !abortRequested);
 
     if (*data != -1) {
         if (shutdown(*data, SHUT_RDWR) == -1) {
@@ -171,7 +177,7 @@ void clientCommunication(int* data)
     }
 }
 
-const char* messageHandler(char* buffer)
+std::string messageHandler(char* buffer)
 {
     std::string option;
     for (int i = 0; buffer[i] != '\0'; ++i) {
@@ -179,7 +185,7 @@ const char* messageHandler(char* buffer)
             option += buffer[i];
         } else {
             if (option == "SEND") {
-                if(clientSend(buffer)){
+                if (clientSend(buffer)) {
                     return "ERR\n";
                 } else {
                     return "OK\n";
@@ -224,7 +230,8 @@ int createDirectory(std::string& pathname)
 
 int clientSend(char* message)
 {
-    std::string line, sender, path_receiver, path_sender, subject;
+    std::string line, path_receiver, subject;
+    //std::string sender, path_sender;
     std::ofstream file;
     int state = 0;
     for (int i = 0; message[i] != '\0'; ++i) {
@@ -244,24 +251,27 @@ int clientSend(char* message)
                     break;
                 case 1:
                     //Sender
-                    sender = line;
+                    //sender = line;
                     state = 2;
                     break;
                 case 2:
                     //Receiver
                     path_receiver = "./user/" + line;
-                    if (createDirectory(path_receiver)){
+                    if (createDirectory(path_receiver)) {
                         return 1;
                     }
+                    /*
                     path_sender = path_receiver + sender;
                     if(createDirectory(path_sender)){
                         return 1;
                     }
+                    */
                     state = 3;
                     break;
                 case 3:
                     //Subject
-                    subject = path_sender + line;
+                    //subject = path_sender + line;
+                    subject = path_receiver + line;
                     file.open(subject);
                     state = 4;
                     break;
@@ -282,17 +292,39 @@ int clientSend(char* message)
     return 0;
 }
 
-const char* clientList(char* message){
-    std::string line, sender, path_receiver, path_sender, subject;
-    std::ofstream file;
+std::string listSubjects(std::string& username)
+{
+    std::string s_path = "./users/" + username;
+    const char* path = s_path.c_str();
+    DIR* dirp = opendir(path);
+    if (dirp == NULL) {
+        perror("Failed to open directory");
+        return "0";
+    }
+
+    std::vector<std::string> subjects;
+    struct dirent* direntp;
+    while ((direntp = readdir(dirp)) != NULL)
+        subjects.push_back(direntp->d_name);
+
+    while ((closedir(dirp) == -1) && (errno == EINTR));
+
+    std::string output = std::to_string(subjects.size()) + "\n";
+    for (const auto& subject : subjects)
+        output += subject + "\n";
+
+    return output;
+}
+
+std::string clientList(char* message)
+{
+    std::string line, username;
+    //std::ofstream file;
     int state = 0;
     for (int i = 0; message[i] != '\0'; ++i) {
         if (message[i] != '\n') {
             line += message[i];
         } else {
-            if (line == ".") {
-                break;
-            }
             switch (state) {
                 case 0:
                     if (line == "LIST") {
@@ -303,14 +335,13 @@ const char* clientList(char* message){
                     break;
                 case 1:
                     //Sender
-                    sender = line;
-                    state = 2;
-                    break;
+                    username = line;
+                    return listSubjects(username);
             }
             line.clear();
         }
     }
-    return 0;
+    return "0";
 }
 
 void signalHandler(int sig)
