@@ -23,13 +23,13 @@ void clientCommunication(int* data);
 
 void signalHandler(int sig);
 
-void messageHandler(char* buffer);
+const char* messageHandler(char* buffer);
 
-void createDirectory(std::string& path);
+int createDirectory(std::string& path);
 
-void clientSend(char* buffer);
+int clientSend(char* message);
 
-void clientList();
+const char* clientList(char* message);
 
 void clientRead();
 
@@ -151,8 +151,10 @@ void clientCommunication(int* data)
 
         buffer[size] = '\0';
         std::cout << "Message received: " << buffer << "\n";
-        messageHandler(buffer);
-        if (send(*data, "OK", 3, 0) == -1) {
+        std::string path = "./users";
+        createDirectory(path);
+        const char* answer = messageHandler(buffer);
+        if (send(*data, answer, 3, 0) == -1) {
             std::perror("send answer failed");
             return;
         }
@@ -169,33 +171,34 @@ void clientCommunication(int* data)
     }
 }
 
-void messageHandler(char* buffer)
+const char* messageHandler(char* buffer)
 {
     std::string option;
     for (int i = 0; buffer[i] != '\0'; ++i) {
         if (buffer[i] != '\n') {
             option += buffer[i];
         } else {
-            std::string path = "./users";
-            createDirectory(path);
-            if (option == ".") {
-                return;
-            } else if (option == "SEND") {
-                clientSend(buffer);
+            if (option == "SEND") {
+                if(clientSend(buffer)){
+                    return "ERR\n";
+                } else {
+                    return "OK\n";
+                }
             } else if (option == "LIST") {
-                clientList();
+                return clientList(buffer);
             } else if (option == "READ") {
                 clientRead();
             } else if (option == "DEL") {
                 clientDel();
             } else if (option == "QUIT") {
-                clientQuit();
+                return "QUIT";
             }
         }
     }
+    return "ERR\n";
 }
 
-void createDirectory(std::string& pathname)
+int createDirectory(std::string& pathname)
 {
     const char* path = pathname.c_str();
     // Create a stat structure to check the directory status
@@ -206,17 +209,20 @@ void createDirectory(std::string& pathname)
         // If stat returns an error, the directory does not exist and can be created
         if (mkdir(path, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) == -1) {
             std::cerr << "Error creating directory\n";
-            return;
+            return 1;
         }
     } else if (info.st_mode & S_IFDIR) {
         // If the directory exists, output a message
         std::cout << "The directory already exists\n";
+        return 0;
     } else {
         std::cout << "Path exists, but is not a directory\n";
+        return 1;
     }
+    return 0;
 }
 
-void clientSend(char* message)
+int clientSend(char* message)
 {
     std::string line, sender, path_receiver, path_sender, subject;
     std::ofstream file;
@@ -232,8 +238,9 @@ void clientSend(char* message)
                 case 0:
                     if (line == "SEND") {
                         state = 1;
+                    } else {
+                        return 1;
                     }
-                    //else
                     break;
                 case 1:
                     //Sender
@@ -243,9 +250,13 @@ void clientSend(char* message)
                 case 2:
                     //Receiver
                     path_receiver = "./user/" + line;
-                    createDirectory(path_receiver);
+                    if (createDirectory(path_receiver)){
+                        return 1;
+                    }
                     path_sender = path_receiver + sender;
-                    createDirectory(path_sender);
+                    if(createDirectory(path_sender)){
+                        return 1;
+                    }
                     state = 3;
                     break;
                 case 3:
@@ -261,13 +272,45 @@ void clientSend(char* message)
                         file.close();
                     } else {
                         std::cout << "Unable to open file";
+                        return 1;
                     }
                     break;
             }
             line.clear();
         }
     }
-    return;
+    return 0;
+}
+
+const char* clientList(char* message){
+    std::string line, sender, path_receiver, path_sender, subject;
+    std::ofstream file;
+    int state = 0;
+    for (int i = 0; message[i] != '\0'; ++i) {
+        if (message[i] != '\n') {
+            line += message[i];
+        } else {
+            if (line == ".") {
+                break;
+            }
+            switch (state) {
+                case 0:
+                    if (line == "LIST") {
+                        state = 1;
+                    } else {
+                        return "0";
+                    }
+                    break;
+                case 1:
+                    //Sender
+                    sender = line;
+                    state = 2;
+                    break;
+            }
+            line.clear();
+        }
+    }
+    return 0;
 }
 
 void signalHandler(int sig)
