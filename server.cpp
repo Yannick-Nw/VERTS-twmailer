@@ -350,11 +350,11 @@ std::string searchSubjects(std::string& username, std::string mailSpoolDir, int 
 
     std::string output = std::to_string(subjects.size()) + "\n";
     for (int i = 0; i < subjects.size(); i++) {
-        if(number == -1) {
+        if (number == -1) {
             std::string line_number = std::to_string(i + 1);
             std::string line = line_number + " - " + subjects[i] + "\n";
             output += line;
-        } else if (number == i + 1){
+        } else if (number == i + 1) {
             return subjects[i];
         }
     }
@@ -391,7 +391,7 @@ std::string clientList(char* message, std::string mailSpoolDir)
 
 std::string clientRead(char* message, std::string mailSpoolDir)
 {
-    std::string message_line, username, path, file_line, content;
+    std::string message_line, username, path, file_line, content, file_name;
     std::ifstream file;
     int state = 0;
     for (int i = 0; message[i] != '\0'; ++i) {
@@ -417,7 +417,11 @@ std::string clientRead(char* message, std::string mailSpoolDir)
                 case 2:
                     //Number
                     int number = std::stoi(message_line);
-                    path += searchSubjects(username, mailSpoolDir, number);
+                    file_name += searchSubjects(username, mailSpoolDir, number);
+                    if (file_name == "0") {
+                        return "0";
+                    }
+                    path += file_name;
                     file.open(path);
                     if (file.is_open()) {
                         while (std::getline(file, file_line)) {
