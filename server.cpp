@@ -352,12 +352,12 @@ std::string searchSubjects(std::string& username, std::string mailSpoolDir, int 
     }
 
     std::string output = std::to_string(subjects.size()) + "\n";
-    for (int i = 0; i < subjects.size(); i++) {
+    for (size_t i = 0; i < subjects.size(); i++) {
         if (number == -1) {
             std::string line_number = std::to_string(i + 1);
             std::string line = line_number + " - " + subjects[i] + "\n";
             output += line;
-        } else if (number == i + 1) {
+        } else if (number == static_cast<int>(i + 1)) {
             return subjects[i];
         }
     }

@@ -27,14 +27,14 @@ clean:
 	clear
 	rm -f bin/* obj/*
 
-./obj/myclient.o: myclient.cpp
-	${CC} ${CFLAGS} -o obj/myclient.o myclient.cpp -c
+./obj/server.o: server.cpp
+	${CC} ${CFLAGS} -o obj/server.o server.cpp -c
 
-./obj/myserver.o: myserver.cpp
-	${CC} ${CFLAGS} -o obj/myserver.o myserver.cpp -c
+./obj/client.o: client.cpp
+	${CC} ${CFLAGS} -o obj/client.o client.cpp -c
 
-./bin/server: ./obj/myserver.o
-	${CC} ${CFLAGS} -o bin/server obj/myserver.o
+./bin/server: ./obj/server.o
+	${CC} ${CFLAGS} -o bin/server obj/server.o
 
-./bin/client: ./obj/myclient.o
-	${CC} ${CFLAGS} -o bin/client obj/myclient.o
+./bin/client: ./obj/client.o
+	${CC} ${CFLAGS} -o bin/client obj/client.o
