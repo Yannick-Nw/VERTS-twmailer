@@ -25,7 +25,7 @@ all: ./bin/server ./bin/client
 
 clean:
 	clear
-	rm -f bin/* obj/*
+	rm -r bin/* obj/*
 
 ./obj/server.o: server.cpp
 	${CC} ${CFLAGS} -o obj/server.o server.cpp -c

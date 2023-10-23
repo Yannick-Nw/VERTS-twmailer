@@ -85,11 +85,19 @@ int main(int argc, char **argv)
       printf(">> ");
       if (fgets(buffer, BUF, stdin) != NULL)
       {
+      buffer[strcspn(buffer, "\n")] = 0; // remove newline character
         int size = strlen(buffer);
         isQuit = strcmp(buffer, "QUIT") == 0;
         sending = read_input(buffer, message);
 
         if (sending){
+         // SEND LENGTH OF DATA
+         if ((send(create_socket, &size, sizeof(int), 0)) == -1)
+         {
+            perror("send error");
+            break;
+         }
+
         // SEND DATA
          if ((send(create_socket, message.c_str(), message.length(), 0)) == -1) 
          {
@@ -98,29 +106,32 @@ int main(int argc, char **argv)
          }
 
          // RECEIVE FEEDBACK
-         size = recv(create_socket, buffer, BUF - 1, 0);
-         if (size == -1)
-         {
+         int answerLength;
+         recv(create_socket, &answerLength, sizeof(int), 0);
+         char answer[BUF];
+         int totalBytesRecv = 0;
+         int bytesLeftRecv = BUF;
+         int bytesRecv;
+
+         while (totalBytesRecv < answerLength) {
+            bytesRecv = recv(create_socket, answer + totalBytesRecv, bytesLeftRecv, 0);
+            if (bytesRecv == -1) {
             perror("recv error");
             break;
          }
-         else if (size == 0)
-         {
-            printf("Server closed remote socket\n"); // ignore error
+
+            if (bytesRecv == 0) {
+                printf("Server closed remote socket\n");
             break;
          }
-         else
-         {
-            buffer[size] = '\0';
-            printf("<< %s\n", buffer); // ignore error
-            if (strcmp("OK", buffer) != 0)
-            {
-               fprintf(stderr, "<< Server error occured, abort\n");
-               break;
+
+            totalBytesRecv += bytesRecv;
+            bytesLeftRecv -= bytesRecv;
             }
-         }
-        }
          
+        answer[totalBytesRecv] = '\0';
+        printf("<< %s\n", answer);
+      }
       }
    } while (!isQuit);
 
