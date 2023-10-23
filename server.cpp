@@ -7,11 +7,11 @@
 #include <fstream>
 #include <iostream>
 #include <netinet/in.h>
-#include <sstream>
+//#include <sstream>
 #include <string>
 #include <sys/socket.h>
 #include <sys/stat.h>
-#include <sys/types.h>
+//#include <sys/types.h>
 #include <unistd.h>
 #include <vector>
 
@@ -47,7 +47,7 @@ int main(int argc, char* argv[])
         std::cout << "Usage: " << argv[0] << "<port> <mail-spool-directoryname>\n";
         return 1;
     }
-    int port = std::atoi(argv[1]);
+    int port = std::stoi(argv[1]);
     if (port == 0) {
         return 1;
     }
@@ -176,7 +176,10 @@ void clientCommunication(int* data, std::string mailSpoolDir)
         buffer[totalBytesRecv] = '\0';
         std::cout << "Message received: " << buffer << "\n";
         std::string path = mailSpoolDir + "/users";
-        createDirectory(path);
+        if(createDirectory(path)){
+            std::cerr << "mail-spool-directoryname error\n";
+            return;
+        }
         std::string s_answer = messageHandler(buffer, mailSpoolDir);
         if (s_answer != "QUIT") {
             const char* answer = s_answer.c_str();
@@ -226,7 +229,12 @@ std::string messageHandler(char* buffer, std::string mailSpoolDir)
             } else if (option == "LIST") {
                 //return clientList(buffer, mailSpoolDir);
             } else if (option == "READ") {
-                //clientRead(buffer, mailSpoolDir);
+                std::string message = clientRead(buffer, mailSpoolDir);
+                if (message == "0"){
+                    return "ERR\n";
+                }
+                std::string ok = "OK\n";
+                return ok.append(message);
             } else if (option == "DEL") {
                 //clientDel();
             } else if (option == "QUIT") {
@@ -438,6 +446,10 @@ std::string clientRead(char* message, std::string mailSpoolDir)
         }
     }
     return "0";
+}
+
+void clientDel(){
+
 }
 
 void signalHandler(int sig)
