@@ -308,7 +308,9 @@ int clientSend(char* message, std::string mailSpoolDir)
                 case 3:
                     //Subject
 
-                    subject = path_receiver + line;
+                    subject = path_receiver;
+                    subject.append("/");
+                    subject.append(line);
                     file.open(subject);
                     state = 4;
                     break;
