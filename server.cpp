@@ -35,7 +35,7 @@ std::string clientList(char* message, std::string mailSpoolDir);
 
 std::string clientRead(char* message, std::string mailSpoolDir);
 
-void clientDel();
+int clientDel(char* message, std::string mailSpoolDir);
 
 std::string searchSubjects(std::string& username, std::string mailSpoolDir, int number = -1);
 
@@ -176,7 +176,7 @@ void clientCommunication(int* data, std::string mailSpoolDir)
         buffer[totalBytesRecv] = '\0';
         std::cout << "Message received: " << buffer << "\n";
         std::string path = mailSpoolDir + "/users";
-        if(createDirectory(path)){
+        if (createDirectory(path)) {
             std::cerr << "mail-spool-directoryname error\n";
             return;
         }
@@ -227,16 +227,20 @@ std::string messageHandler(char* buffer, std::string mailSpoolDir)
                     return "OK\n";
                 }
             } else if (option == "LIST") {
-                //return clientList(buffer, mailSpoolDir);
+                return clientList(buffer, mailSpoolDir);
             } else if (option == "READ") {
                 std::string message = clientRead(buffer, mailSpoolDir);
-                if (message == "0"){
+                if (message == "0") {
                     return "ERR\n";
                 }
                 std::string ok = "OK\n";
                 return ok.append(message);
             } else if (option == "DEL") {
-                //clientDel();
+                if (clientDel(buffer, mailSpoolDir)) {
+                    return "ERR\n";
+                } else {
+                    return "OK\n";
+                }
             } else if (option == "QUIT") {
                 return "QUIT";
             }
@@ -272,7 +276,6 @@ int createDirectory(std::string& pathname)
 int clientSend(char* message, std::string mailSpoolDir)
 {
     std::string line, path_receiver, subject;
-    //std::string sender, path_sender;
     std::ofstream file;
     int state = 0;
     for (int i = 0; message[i] != '\0'; ++i) {
@@ -292,7 +295,6 @@ int clientSend(char* message, std::string mailSpoolDir)
                     break;
                 case 1:
                     //Sender
-                    //sender = line;
                     state = 2;
                     break;
                 case 2:
@@ -301,17 +303,10 @@ int clientSend(char* message, std::string mailSpoolDir)
                     if (createDirectory(path_receiver)) {
                         return 1;
                     }
-                    /*
-                    path_sender = path_receiver + sender;
-                    if(createDirectory(path_sender)){
-                        return 1;
-                    }
-                    */
                     state = 3;
                     break;
                 case 3:
                     //Subject
-                    //subject = path_sender + line;
 
                     subject = path_receiver + line;
                     file.open(subject);
@@ -372,7 +367,6 @@ std::string searchSubjects(std::string& username, std::string mailSpoolDir, int 
 std::string clientList(char* message, std::string mailSpoolDir)
 {
     std::string line, username;
-    //std::ofstream file;
     int state = 0;
     for (int i = 0; message[i] != '\0'; ++i) {
         if (message[i] != '\n') {
@@ -389,7 +383,7 @@ std::string clientList(char* message, std::string mailSpoolDir)
                 case 1:
                     //Sender
                     username = line;
-                    //return searchSubjects(username, mailSpoolDir);
+                    return searchSubjects(username, mailSpoolDir);
             }
             line.clear();
         }
@@ -415,7 +409,7 @@ std::string clientRead(char* message, std::string mailSpoolDir)
                     }
                     break;
                 case 1:
-                    //Sender
+                    //user
                     username = message_line;
                     path = mailSpoolDir;
                     path += "/";
@@ -448,8 +442,49 @@ std::string clientRead(char* message, std::string mailSpoolDir)
     return "0";
 }
 
-void clientDel(){
-
+int clientDel(char* message, std::string mailSpoolDir)
+{
+    std::string message_line, username, path, file_name;
+    std::ifstream file;
+    int state = 0;
+    for (int i = 0; message[i] != '\0'; ++i) {
+        if (message[i] != '\n') {
+            message_line += message[i];
+        } else {
+            switch (state) {
+                case 0:
+                    if (message_line == "READ") {
+                        state = 1;
+                    } else {
+                        return 1;
+                    }
+                    break;
+                case 1:
+                    //user
+                    username = message_line;
+                    path = mailSpoolDir;
+                    path += "/";
+                    path += username;
+                    state = 2;
+                    break;
+                case 2:
+                    //number
+                    int number = std::stoi(message_line);
+                    file_name += searchSubjects(username, mailSpoolDir, number);
+                    if (file_name == "0") {
+                        return 1;
+                    }
+                    path += file_name;
+                    if (remove(path.c_str()) != 0) {
+                        std::cerr << "Error deleting file";
+                        return 1;
+                    }
+                    return 0;
+            }
+            message_line.clear();
+        }
+    }
+    return 1;
 }
 
 void signalHandler(int sig)
