@@ -37,7 +37,7 @@ std::string clientRead(char* message, std::string mailSpoolDir);
 
 void clientDel();
 
-std::string searchSubjects(std::string& username, std::string mailSpoolDir);
+std::string searchSubjects(std::string& username, std::string mailSpoolDir, int number = -1);
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -326,7 +326,7 @@ int clientSend(char* message, std::string mailSpoolDir)
     return 0;
 }
 
-std::string searchSubjects(std::string& username, std::string mailSpoolDir, int number = -1)
+std::string searchSubjects(std::string& username, std::string mailSpoolDir, int number)
 {
     std::string s_path = mailSpoolDir + username;
     const char* path = s_path.c_str();
@@ -354,11 +354,10 @@ std::string searchSubjects(std::string& username, std::string mailSpoolDir, int 
             std::string line_number = std::to_string(i + 1);
             std::string line = line_number + " - " + subjects[i] + "\n";
             output += line;
-        } else if (number != -1 && number == i + 1){
-            output = subjects[i];
+        } else if (number == i + 1){
+            return subjects[i];
         }
     }
-
     return output;
 }
 
@@ -393,7 +392,6 @@ std::string clientList(char* message, std::string mailSpoolDir)
 std::string clientRead(char* message, std::string mailSpoolDir)
 {
     std::string message_line, username, path, file_line, content;
-    //std::ofstream file;
     std::ifstream file;
     int state = 0;
     for (int i = 0; message[i] != '\0'; ++i) {
@@ -418,19 +416,19 @@ std::string clientRead(char* message, std::string mailSpoolDir)
                     break;
                 case 2:
                     //Number
-                    //return searchSubjects(username, mailSpoolDir)
+                    int number = std::stoi(message_line);
+                    path += searchSubjects(username, mailSpoolDir, number);
                     file.open(path);
-
                     if (file.is_open()) {
                         while (std::getline(file, file_line)) {
                             content += file_line + '\n';
                         }
                         file.close();
                     } else {
-                        std::cout << "File could not be opened\n";
+                        std::cerr << "File could not be opened\n";
                         return "0";
                     }
-                    return file_line;
+                    return content;
             }
             message_line.clear();
         }
