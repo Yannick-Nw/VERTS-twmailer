@@ -23,34 +23,48 @@ int new_socket = -1;
 
 void clientCommunication(int* data, std::string mailSpoolDir);
 
+// Signal handler for SIGINT (Ctrl+C)
 void signalHandler(int sig);
 
+// Function to handle client's messages
 std::string messageHandler(char* buffer, std::string mailSpoolDir);
 
+// Function to create a directory
 int createDirectory(std::string& path);
 
+// Function to send a message to the client
 int clientSend(char* message, std::string mailSpoolDir);
 
+// Function to list the client's messages
 std::string clientList(char* message, std::string mailSpoolDir);
 
+// Function to read a client's message
 std::string clientRead(char* message, std::string mailSpoolDir);
 
+// Function to delete a client's message
 int clientDel(char* message, std::string mailSpoolDir);
 
+// Function to search for subjects in the user's mailbox
 std::string searchSubjects(std::string& username, std::string mailSpoolDir, int number = -1);
 
-///////////////////////////////////////////////////////////////////////////////
-
+// Main function
 int main(int argc, char* argv[])
 {
+    // Check if the correct number of arguments are provided
     if (argc != 3) {
         std::cout << "Usage: " << argv[0] << "<port> <mail-spool-directoryname>\n";
         return 1;
     }
+
+    // Convert the port number from string to integer
     int port = std::stoi(argv[1]);
+
+    // Check if the port number is valid
     if (port == 0) {
         return 1;
     }
+
+    // Get the mail spool directory from the arguments
     std::string mailSpoolDir = argv[2];
 
     socklen_t address_length;
@@ -67,6 +81,7 @@ int main(int argc, char* argv[])
         return EXIT_FAILURE;
     }
 
+    // Set socket options for reusing address and port and check if it was successful
     if (setsockopt(create_socket,
             SOL_SOCKET,
             SO_REUSEADDR,
@@ -95,11 +110,13 @@ int main(int argc, char* argv[])
         return EXIT_FAILURE;
     }
 
+    // Listen for incoming connections and check if it was successful
     if (listen(create_socket, 5) == -1) {
         std::perror("listen error");
         return EXIT_FAILURE;
     }
 
+    // Main loop for accepting connections and handling client communication
     while (!abortRequested) {
         std::cout << "Waiting for connections...\n";
 
@@ -121,6 +138,7 @@ int main(int argc, char* argv[])
         new_socket = -1;
     }
 
+    // Close the socket after all connections have been handled
     if (create_socket != -1) {
         if (shutdown(create_socket, SHUT_RDWR) == -1) {
             std::perror("shutdown create_socket");
@@ -180,7 +198,7 @@ void clientCommunication(int* data, std::string mailSpoolDir)
             std::cerr << "mail-spool-directoryname error\n";
             return;
         }
-        std::string s_answer = messageHandler(buffer, mailSpoolDir);
+        std::string s_answer = messageHandler(buffer, path);
         if (s_answer != "QUIT") {
             const char* answer = s_answer.c_str();
             int totalBytesSent = 0;
@@ -299,7 +317,9 @@ int clientSend(char* message, std::string mailSpoolDir)
                     break;
                 case 2:
                     //Receiver
-                    path_receiver = mailSpoolDir + line;
+                    path_receiver = mailSpoolDir;
+                    path_receiver += "/";
+                    path_receiver += line;
                     if (createDirectory(path_receiver)) {
                         return 1;
                     }
@@ -333,7 +353,9 @@ int clientSend(char* message, std::string mailSpoolDir)
 
 std::string searchSubjects(std::string& username, std::string mailSpoolDir, int number)
 {
-    std::string s_path = mailSpoolDir + username;
+    std::string s_path = mailSpoolDir;
+    s_path += "/";
+    s_path += username;
     const char* path = s_path.c_str();
     DIR* dirp = opendir(path);
     if (dirp == NULL) {
@@ -360,6 +382,7 @@ std::string searchSubjects(std::string& username, std::string mailSpoolDir, int 
             std::string line = line_number + " - " + subjects[i] + "\n";
             output += line;
         } else if (number == static_cast<int>(i + 1)) {
+            std::cout << subjects[i];
             return subjects[i];
         }
     }
@@ -425,6 +448,7 @@ std::string clientRead(char* message, std::string mailSpoolDir)
                     if (file_name == "0") {
                         return "0";
                     }
+                    path += "/";
                     path += file_name;
                     file.open(path);
                     if (file.is_open()) {
@@ -433,7 +457,7 @@ std::string clientRead(char* message, std::string mailSpoolDir)
                         }
                         file.close();
                     } else {
-                        std::cerr << "File could not be opened\n";
+                        std::cerr << "File could not be opened\n" << path;
                         return "0";
                     }
                     return content;
@@ -476,6 +500,7 @@ int clientDel(char* message, std::string mailSpoolDir)
                     if (file_name == "0") {
                         return 1;
                     }
+                    path += "/";
                     path += file_name;
                     if (remove(path.c_str()) != 0) {
                         std::cerr << "Error deleting file";
