@@ -8,6 +8,7 @@
 #include <string.h>
 #include <string>
 #include <iostream>
+#include <termios.h>
 
 #define BUF 1024
 #define PORT 6543
@@ -20,6 +21,22 @@ int read_input(char* buffer, std::string message)
     message.append(buffer);
     std::cout << "message: " << message << std::endl;
     return 0;
+}
+
+// Disable terminal echo
+void disableEcho() {
+    struct termios t;
+    tcgetattr(STDIN_FILENO, &t);
+    t.c_lflag &= ~ECHO;
+    tcsetattr(STDIN_FILENO, TCSANOW, &t);
+}
+
+// Enable terminal echo
+void enableEcho() {
+    struct termios t;
+    tcgetattr(STDIN_FILENO, &t);
+    t.c_lflag |= ECHO;
+    tcsetattr(STDIN_FILENO, TCSANOW, &t);
 }
 
 int main(int argc, char** argv)
@@ -77,11 +94,22 @@ int main(int argc, char** argv)
         std::getline(std::cin, line);
         std::string command = line;
 
-        if (command == "SEND") {
-            message = "SEND\n";
-            printf("Sender: ");
+        if (command == "LOGIN"){
+            message = "LOGIN\n";
+            printf("Username: ");
             std::getline(std::cin, line);
             message += line + "\n";
+
+            disableEcho(); // Disable echo to hide password
+            printf("Password: ");
+            std::getline(std::cin, line);
+            message += line + "\n";
+            enableEcho(); // Enable echo again
+        } else if (command == "SEND") {
+            message = "SEND\n";
+            // printf("Sender: ");
+            // std::getline(std::cin, line);
+            // message += line + "\n";
 
             printf("Receiver: ");
             std::getline(std::cin, line);
