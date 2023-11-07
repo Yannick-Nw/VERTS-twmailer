@@ -2,7 +2,7 @@
 # Makefile
 #############################################################################################
 # G++ is part of GCC (GNU compiler collection) and is a compiler best suited for C++
-CC=g++
+
 
 # Compiler Flags: https://linux.die.net/man/1/g++
 #############################################################################################
@@ -18,7 +18,9 @@ CC=g++
 #           of object code produced by the compiler or that of libraries supplied with it. 
 #           These are HP-UX specific flags.
 #############################################################################################
-CFLAGS=-g -Wall -Wextra -Werror -O -std=c++14 -pthread
+CC = g++
+CFLAGS = -g -Wall -Wextra -Werror -O -std=c++14 -pthread
+LIBS = -lldap -llber
 
 rebuild: clean all
 all: ./bin/server ./bin/client
@@ -27,14 +29,14 @@ clean:
 	clear
 	rm -r bin/* obj/*
 
-./obj/server.o: server.cpp
+./obj/server.o: server.cpp ldap.h
 	${CC} ${CFLAGS} -o obj/server.o server.cpp -c
 
 ./obj/client.o: client.cpp
 	${CC} ${CFLAGS} -o obj/client.o client.cpp -c
 
 ./bin/server: ./obj/server.o
-	${CC} ${CFLAGS} -o bin/server obj/server.o
+	${CC} ${CFLAGS} -o bin/server obj/server.o ${LIBS}
 
 ./bin/client: ./obj/client.o
 	${CC} ${CFLAGS} -o bin/client obj/client.o

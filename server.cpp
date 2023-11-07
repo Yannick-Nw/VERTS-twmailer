@@ -14,6 +14,7 @@
 //#include <sys/types.h>
 #include <unistd.h>
 #include <vector>
+#include <ldap.h>
 
 #define BUF 1024
 
@@ -46,6 +47,9 @@ int clientDel(char* message, std::string mailSpoolDir);
 
 // Function to search for subjects in the user's mailbox
 std::string searchSubjects(std::string& username, std::string mailSpoolDir, int number = -1);
+
+// Function to login client
+int clientLogin(char* message, std::string mailSpoolDir);
 
 // Main function
 int main(int argc, char* argv[])
@@ -255,6 +259,12 @@ std::string messageHandler(char* buffer, std::string mailSpoolDir)
                 return ok.append(message);
             } else if (option == "DEL") {
                 if (clientDel(buffer, mailSpoolDir)) {
+                    return "ERR\n";
+                } else {
+                    return "OK\n";
+                }
+            } else if (option == "LOGIN") {
+                if (clientLogin(buffer, mailSpoolDir)){
                     return "ERR\n";
                 } else {
                     return "OK\n";
@@ -511,6 +521,63 @@ int clientDel(char* message, std::string mailSpoolDir)
             message_line.clear();
         }
     }
+    return 1;
+}
+
+int clientLogin(char* message, std::string mailSpoolDir)
+{
+    std::string path = mailSpoolDir;
+    std::string message_line, username, password;
+    int state = 0;
+    for (int i = 0; message[i] != '\0'; ++i) {
+        if (message[i] != '\n') {
+            message_line += message[i];
+        } else {
+            switch (state) {
+                case 0:
+                    if (message_line == "LOGIN") {
+                        state = 1;
+                    } else {
+                        return 1;
+                    }
+                    break;
+                case 1:
+                    // username
+                    username = message_line;
+                    state = 2;
+                    break;
+                case 2:
+                    // password
+                    password = message_line;
+            }
+            message_line.clear();
+        }
+    }
+
+    // Start LDAP
+    LDAP *ldap;
+    int con = ldap_initialize(&ldap, "ldap://ldap.technikum.wien.at:389");
+    if (con != LDAP_SUCCESS) {
+        std::cout << "Error: LDAP connection failed!" << std::endl;
+    } else {
+        std::cout << "LDAP works!" << std::endl;
+    }
+
+    // LDAP Login
+    int msgid;
+    berval cred;
+    cred.bv_val = (char*)password.c_str();
+    cred.bv_len = password.length();
+    std::string dn = "cn=" + username + ",dc=technikum-wien,dc=at";
+    int answ = ldap_sasl_bind(ldap, dn.c_str(), NULL, &cred, NULL, NULL, &msgid);
+    if (answ != LDAP_SUCCESS) {
+        std::cout << "Error: LDAP login failed!" << std::endl;
+    } else {
+        std::cout << "LDAP login works!" << std::endl;
+    }
+
+    //Close LDAP
+    ldap_unbind_ext(ldap, NULL, NULL);
     return 1;
 }
 
