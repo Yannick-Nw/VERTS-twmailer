@@ -13,6 +13,7 @@
 #include <unistd.h>
 #include <vector>
 #include <ldap.h>
+#include <map>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <fcntl.h>
@@ -22,14 +23,16 @@
 bool abortRequested = false;
 int create_socket = -1;
 int new_socket = -1;
+std::map<std::string, time_t> blacklist;
+int loginFailed = 0;
 
-void clientCommunication(int* data, std::string mailSpoolDir);
+void clientCommunication(int* data, std::string mailSpoolDir, std::string userIP);
 
 // Signal handler for SIGINT (Ctrl+C)
 void signalHandler(int sig);
 
 // Function to handle client's messages
-std::string messageHandler(char* buffer, std::string mailSpoolDir, std::string userName = "");
+std::string messageHandler(char* buffer, std::string mailSpoolDir, std::string userIP, std::string userName = "");
 
 // Function to create a directory
 int createDirectory(std::string& path);
@@ -51,6 +54,12 @@ std::string searchSubjects(std::string& username, std::string mailSpoolDir, int 
 
 // Function to login client
 int clientLogin(char* message, std::string mailSpoolDir);
+
+// Function to blacklist a user
+void blacklistUser(std::string userIP);
+
+// Function to check if a user is blacklisted
+bool checkBlacklist(std::string userIP);
 
 // Main function
 int main(int argc, char* argv[])
@@ -155,7 +164,7 @@ int main(int argc, char* argv[])
                 }
                 create_socket = -1;
             }
-            clientCommunication(&new_socket, mailSpoolDir);
+            clientCommunication(&new_socket, mailSpoolDir, inet_ntoa(client_address.sin_addr));
             if (new_socket != -1) {
                 if (shutdown(new_socket, SHUT_RDWR) == -1) {
                     std::perror("shutdown new_socket");
@@ -188,7 +197,7 @@ int main(int argc, char* argv[])
     return EXIT_SUCCESS;
 }
 
-void clientCommunication(int* data, std::string mailSpoolDir)
+void clientCommunication(int* data, std::string mailSpoolDir, std::string userIP)
 {
     char buffer[BUF];
     //int* current_socket = (int*) data;
@@ -235,8 +244,7 @@ void clientCommunication(int* data, std::string mailSpoolDir)
             std::cerr << "mail-spool-directoryname error\n";
             return;
         }
-
-        std::string s_answer = messageHandler(buffer, path, userName);
+        std::string s_answer = messageHandler(buffer, path, userIP, userName);
         if (s_answer != "QUIT") {
             if (loggedIn == false) {
                 if (s_answer != "ERR\n") {
@@ -276,7 +284,7 @@ void clientCommunication(int* data, std::string mailSpoolDir)
     }
 }
 
-std::string messageHandler(char* buffer, std::string mailSpoolDir, std::string userName)
+std::string messageHandler(char* buffer, std::string mailSpoolDir, std::string userIP, std::string userName)
 {
     std::string option;
     int loggedIn = 0;
@@ -308,10 +316,20 @@ std::string messageHandler(char* buffer, std::string mailSpoolDir, std::string u
                     }
                 }
             } else if (option == "LOGIN") {
-                userName = clientLogin(buffer, mailSpoolDir);
-                if (userName.empty()) {
+                if (checkBlacklist(userIP)){
+                    std::cout << "Login blocked. Blacklisted user." << std::endl;
+                    return "ERR\n";
+                }
+                if (clientLogin(buffer, mailSpoolDir)){
+                    loginFailed++;
+                    if (loginFailed >= 3){
+                        blacklistUser(userIP);
+                        loginFailed = 0;
+                        std::cout << "Login blocked. Add user to blacklist." << std::endl;
+                    }
                     return "ERR\n";
                 } else {
+                    loginFailed = 0;
                     return userName;
                 }
             } else if (option == "QUIT") {
@@ -691,7 +709,7 @@ int clientLogin(char* message, std::string mailSpoolDir)
         }
     }
     // LDAP config
-    const char* ldapUri = "ldap://ldap.technikum-wien.at:389";
+    const char *ldapUri = "ldap://ldap.technikum-wien.at:389";
     const int ldapVersion = LDAP_VERSION3;
 
     // Set username
@@ -703,9 +721,10 @@ int clientLogin(char* message, std::string mailSpoolDir)
     int rc = 0; // return code
 
     // Setup LDAP connection
-    LDAP* ldapHandle;
+    LDAP *ldapHandle;
     rc = ldap_initialize(&ldapHandle, ldapUri);
-    if (rc != LDAP_SUCCESS) {
+    if (rc != LDAP_SUCCESS)
+    {
         fprintf(stderr, "ldap_init failed\n");
         return -1;
     }
@@ -713,10 +732,11 @@ int clientLogin(char* message, std::string mailSpoolDir)
 
     // LDAP set options
     rc = ldap_set_option(
-            ldapHandle,
-            LDAP_OPT_PROTOCOL_VERSION, // OPTION
-            &ldapVersion);             // IN-Value
-    if (rc != LDAP_OPT_SUCCESS) {
+        ldapHandle,
+        LDAP_OPT_PROTOCOL_VERSION, // OPTION
+        &ldapVersion);             // IN-Value
+    if (rc != LDAP_OPT_SUCCESS)
+    {
         // https://www.openldap.org/software/man.cgi?query=ldap_err2string&sektion=3&apropos=0&manpath=OpenLDAP+2.4-Release
         fprintf(stderr, "ldap_set_option(PROTOCOL_VERSION): %s\n", ldap_err2string(rc));
         ldap_unbind_ext_s(ldapHandle, NULL, NULL);
@@ -725,10 +745,11 @@ int clientLogin(char* message, std::string mailSpoolDir)
 
     // LDAP start connection secure (initialize TLS)
     rc = ldap_start_tls_s(
-            ldapHandle,
-            NULL,
-            NULL);
-    if (rc != LDAP_SUCCESS) {
+        ldapHandle,
+        NULL,
+        NULL);
+    if (rc != LDAP_SUCCESS)
+    {
         fprintf(stderr, "ldap_start_tls_s(): %s\n", ldap_err2string(rc));
         ldap_unbind_ext_s(ldapHandle, NULL, NULL);
         return EXIT_FAILURE;
@@ -736,18 +757,19 @@ int clientLogin(char* message, std::string mailSpoolDir)
 
     // LDAP bind credentials
     BerValue bindCredentials;
-    bindCredentials.bv_val = (char*) ldapBindPassword.c_str();;
+    bindCredentials.bv_val = (char*)ldapBindPassword.c_str();;
     bindCredentials.bv_len = ldapBindPassword.length();
-    BerValue* servercredp; // server's credentials
+    BerValue *servercredp; // server's credentials
     rc = ldap_sasl_bind_s(
-            ldapHandle,
-            ldapBindUser,
-            LDAP_SASL_SIMPLE,
-            &bindCredentials,
-            NULL,
-            NULL,
-            &servercredp);
-    if (rc != LDAP_SUCCESS) {
+        ldapHandle,
+        ldapBindUser,
+        LDAP_SASL_SIMPLE,
+        &bindCredentials,
+        NULL,
+        NULL,
+        &servercredp);
+    if (rc != LDAP_SUCCESS)
+    {
         fprintf(stderr, "LDAP bind error: %s\n", ldap_err2string(rc));
         ldap_unbind_ext_s(ldapHandle, NULL, NULL);
         return EXIT_FAILURE;
@@ -793,4 +815,27 @@ void signalHandler(int sig)
     } else {
         exit(sig);
     }
+}
+
+void blacklistUser(std::string userIP){
+    time_t currentTime;
+    time(&currentTime);
+    blacklist[userIP] = currentTime;
+}
+
+bool checkBlacklist(std::string userIP){
+    auto entry = blacklist.find(userIP);
+    if (entry == blacklist.end()) {
+        return false;
+    }
+
+    time_t blacklistTime = entry->second;
+    time_t currentTime;
+    time(&currentTime);
+
+    if((currentTime - blacklistTime) < 60){
+        return true;
+    }
+
+    return false;
 }
