@@ -29,22 +29,22 @@ void clientCommunication(int* data, std::string mailSpoolDir);
 void signalHandler(int sig);
 
 // Function to handle client's messages
-std::string messageHandler(char* buffer, std::string mailSpoolDir);
+std::string messageHandler(char* buffer, std::string mailSpoolDir, std::string userName = "");
 
 // Function to create a directory
 int createDirectory(std::string& path);
 
 // Function to send a message to the client
-int clientSend(char* message, std::string mailSpoolDir);
+int clientSend(char* message, std::string mailSpoolDir, std::string userName);
 
 // Function to list the client's messages
-std::string clientList(char* message, std::string mailSpoolDir);
+std::string clientList(char* message, std::string mailSpoolDir, std::string userName);
 
 // Function to read a client's message
-std::string clientRead(char* message, std::string mailSpoolDir);
+std::string clientRead(char* message, std::string mailSpoolDir, std::string userName);
 
 // Function to delete a client's message
-int clientDel(char* message, std::string mailSpoolDir);
+int clientDel(char* message, std::string mailSpoolDir, std::string userName);
 
 // Function to search for subjects in the user's mailbox
 std::string searchSubjects(std::string& username, std::string mailSpoolDir, int number = -1);
@@ -198,7 +198,8 @@ void clientCommunication(int* data, std::string mailSpoolDir)
         std::perror("send failed");
         return;
     }
-
+    std::string userName = "";
+    bool loggedIn = false;
     do {
         int totalBytesRecv = 0;
         int bytesLeftRecv = BUF;
@@ -234,8 +235,16 @@ void clientCommunication(int* data, std::string mailSpoolDir)
             std::cerr << "mail-spool-directoryname error\n";
             return;
         }
-        std::string s_answer = messageHandler(buffer, path);
+
+        std::string s_answer = messageHandler(buffer, path, userName);
         if (s_answer != "QUIT") {
+            if (loggedIn == false) {
+                if (s_answer != "ERR\n") {
+                    loggedIn = true;
+                    userName = s_answer;
+                    s_answer = "OK\n";
+                }
+            }
             const char* answer = s_answer.c_str();
             int totalBytesSent = 0;
             int bytesLeftSent = BUF;
@@ -267,39 +276,43 @@ void clientCommunication(int* data, std::string mailSpoolDir)
     }
 }
 
-std::string messageHandler(char* buffer, std::string mailSpoolDir)
+std::string messageHandler(char* buffer, std::string mailSpoolDir, std::string userName)
 {
     std::string option;
+    int loggedIn = 0;
     for (int i = 0; buffer[i] != '\0'; ++i) {
         if (buffer[i] != '\n') {
             option += buffer[i];
         } else {
-            if (option == "SEND") {
-                if (clientSend(buffer, mailSpoolDir)) {
-                    return "ERR\n";
-                } else {
-                    return "OK\n";
-                }
-            } else if (option == "LIST") {
-                return clientList(buffer, mailSpoolDir);
-            } else if (option == "READ") {
-                std::string message = clientRead(buffer, mailSpoolDir);
-                if (message == "0") {
-                    return "ERR\n";
-                }
-                std::string ok = "OK\n";
-                return ok.append(message);
-            } else if (option == "DEL") {
-                if (clientDel(buffer, mailSpoolDir)) {
-                    return "ERR\n";
-                } else {
-                    return "OK\n";
+            if (userName != "") {
+                if (option == "SEND") {
+                    if (clientSend(buffer, mailSpoolDir, userName)) {
+                        return "ERR\n";
+                    } else {
+                        return "OK\n";
+                    }
+                } else if (option == "LIST") {
+                    return clientList(buffer, mailSpoolDir, userName);
+                } else if (option == "READ") {
+                    std::string message = clientRead(buffer, mailSpoolDir, userName);
+                    if (message == "0") {
+                        return "ERR\n";
+                    }
+                    std::string ok = "OK\n";
+                    return ok.append(message);
+                } else if (option == "DEL") {
+                    if (clientDel(buffer, mailSpoolDir, userName)) {
+                        return "ERR\n";
+                    } else {
+                        return "OK\n";
+                    }
                 }
             } else if (option == "LOGIN") {
-                if (clientLogin(buffer, mailSpoolDir)) {
+                userName = clientLogin(buffer, mailSpoolDir);
+                if (userName.empty()) {
                     return "ERR\n";
                 } else {
-                    return "OK\n";
+                    return userName;
                 }
             } else if (option == "QUIT") {
                 return "QUIT";
@@ -333,7 +346,7 @@ int createDirectory(std::string& pathname)
     return 0;
 }
 
-int clientSend(char* message, std::string mailSpoolDir)
+int clientSend(char* message, std::string mailSpoolDir, std::string userName)
 {
     std::string line, path_receiver, subject;
     std::ofstream file;
@@ -354,10 +367,12 @@ int clientSend(char* message, std::string mailSpoolDir)
                     }
                     break;
                 case 1:
+                    /*
                     //Sender
                     state = 2;
                     break;
                 case 2:
+                    */
                     //Receiver
                     path_receiver = mailSpoolDir;
                     path_receiver += "/";
@@ -365,18 +380,20 @@ int clientSend(char* message, std::string mailSpoolDir)
                     if (createDirectory(path_receiver)) {
                         return 1;
                     }
-                    state = 3;
+                    state = 2;
                     break;
-                case 3:
+                case 2:
                     //Subject
 
                     subject = path_receiver;
                     subject.append("/");
                     subject.append(line);
+                    subject.append(" - ");
+                    subject.append(userName);
                     file.open(subject);
-                    state = 4;
+                    state = 3;
                     break;
-                case 4:
+                case 3:
                     //Message
                     if (file.is_open()) {
                         file << line;
@@ -457,7 +474,7 @@ std::string searchSubjects(std::string& username, std::string mailSpoolDir, int 
     return output;
 }
 
-std::string clientList(char* message, std::string mailSpoolDir)
+std::string clientList(char* message, std::string mailSpoolDir, std::string userName)
 {
     std::string line, username;
     int state = 0;
@@ -475,8 +492,8 @@ std::string clientList(char* message, std::string mailSpoolDir)
                     break;
                 case 1:
                     //Sender
-                    username = line;
-                    return searchSubjects(username, mailSpoolDir);
+                    //username = line;
+                    return searchSubjects(userName, mailSpoolDir);
             }
             line.clear();
         }
@@ -484,7 +501,7 @@ std::string clientList(char* message, std::string mailSpoolDir)
     return "0";
 }
 
-std::string clientRead(char* message, std::string mailSpoolDir)
+std::string clientRead(char* message, std::string mailSpoolDir, std::string userName)
 {
     std::string message_line, username, path, file_line, content, file_name;
     std::ifstream file;
@@ -503,7 +520,8 @@ std::string clientRead(char* message, std::string mailSpoolDir)
                     break;
                 case 1:
                     //user
-                    username = message_line;
+                    //username = message_line;
+                    username = userName;
                     path = mailSpoolDir;
                     path += "/";
                     path += username;
@@ -566,7 +584,7 @@ std::string clientRead(char* message, std::string mailSpoolDir)
     return "0";
 }
 
-int clientDel(char* message, std::string mailSpoolDir)
+int clientDel(char* message, std::string mailSpoolDir, std::string userName)
 {
     std::string message_line, username, path, file_name;
     std::ifstream file;
@@ -585,7 +603,8 @@ int clientDel(char* message, std::string mailSpoolDir)
                     break;
                 case 1:
                     //user
-                    username = message_line;
+                    //username = message_line;
+                    username = userName;
                     path = mailSpoolDir;
                     path += "/";
                     path += username;
@@ -642,7 +661,8 @@ int clientDel(char* message, std::string mailSpoolDir)
     return 1;
 }
 
-int clientLogin(char* message, std::string mailSpoolDir){
+int clientLogin(char* message, std::string mailSpoolDir)
+{
     std::string path = mailSpoolDir;
     std::string message_line, ldapUser, ldapBindPassword;
     int state = 0;
@@ -671,7 +691,7 @@ int clientLogin(char* message, std::string mailSpoolDir){
         }
     }
     // LDAP config
-    const char *ldapUri = "ldap://ldap.technikum-wien.at:389";
+    const char* ldapUri = "ldap://ldap.technikum-wien.at:389";
     const int ldapVersion = LDAP_VERSION3;
 
     // Set username
@@ -683,10 +703,9 @@ int clientLogin(char* message, std::string mailSpoolDir){
     int rc = 0; // return code
 
     // Setup LDAP connection
-    LDAP *ldapHandle;
+    LDAP* ldapHandle;
     rc = ldap_initialize(&ldapHandle, ldapUri);
-    if (rc != LDAP_SUCCESS)
-    {
+    if (rc != LDAP_SUCCESS) {
         fprintf(stderr, "ldap_init failed\n");
         return -1;
     }
@@ -694,11 +713,10 @@ int clientLogin(char* message, std::string mailSpoolDir){
 
     // LDAP set options
     rc = ldap_set_option(
-        ldapHandle,
-        LDAP_OPT_PROTOCOL_VERSION, // OPTION
-        &ldapVersion);             // IN-Value
-    if (rc != LDAP_OPT_SUCCESS)
-    {
+            ldapHandle,
+            LDAP_OPT_PROTOCOL_VERSION, // OPTION
+            &ldapVersion);             // IN-Value
+    if (rc != LDAP_OPT_SUCCESS) {
         // https://www.openldap.org/software/man.cgi?query=ldap_err2string&sektion=3&apropos=0&manpath=OpenLDAP+2.4-Release
         fprintf(stderr, "ldap_set_option(PROTOCOL_VERSION): %s\n", ldap_err2string(rc));
         ldap_unbind_ext_s(ldapHandle, NULL, NULL);
@@ -707,11 +725,10 @@ int clientLogin(char* message, std::string mailSpoolDir){
 
     // LDAP start connection secure (initialize TLS)
     rc = ldap_start_tls_s(
-        ldapHandle,
-        NULL,
-        NULL);
-    if (rc != LDAP_SUCCESS)
-    {
+            ldapHandle,
+            NULL,
+            NULL);
+    if (rc != LDAP_SUCCESS) {
         fprintf(stderr, "ldap_start_tls_s(): %s\n", ldap_err2string(rc));
         ldap_unbind_ext_s(ldapHandle, NULL, NULL);
         return EXIT_FAILURE;
@@ -719,19 +736,18 @@ int clientLogin(char* message, std::string mailSpoolDir){
 
     // LDAP bind credentials
     BerValue bindCredentials;
-    bindCredentials.bv_val = (char*)ldapBindPassword.c_str();;
+    bindCredentials.bv_val = (char*) ldapBindPassword.c_str();;
     bindCredentials.bv_len = ldapBindPassword.length();
-    BerValue *servercredp; // server's credentials
+    BerValue* servercredp; // server's credentials
     rc = ldap_sasl_bind_s(
-        ldapHandle,
-        ldapBindUser,
-        LDAP_SASL_SIMPLE,
-        &bindCredentials,
-        NULL,
-        NULL,
-        &servercredp);
-    if (rc != LDAP_SUCCESS)
-    {
+            ldapHandle,
+            ldapBindUser,
+            LDAP_SASL_SIMPLE,
+            &bindCredentials,
+            NULL,
+            NULL,
+            &servercredp);
+    if (rc != LDAP_SUCCESS) {
         fprintf(stderr, "LDAP bind error: %s\n", ldap_err2string(rc));
         ldap_unbind_ext_s(ldapHandle, NULL, NULL);
         return EXIT_FAILURE;
