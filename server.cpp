@@ -292,7 +292,7 @@ std::string messageHandler(char* buffer, std::string mailSpoolDir, std::string u
         if (buffer[i] != '\n') {
             option += buffer[i];
         } else {
-            if (userName != "") {
+            if (userName != "" && (option != "LOGIN" || option != "QUIT")) {
                 if (option == "SEND") {
                     if (clientSend(buffer, mailSpoolDir, userName)) {
                         return "ERR\n";
