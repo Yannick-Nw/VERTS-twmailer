@@ -7,7 +7,6 @@
 #include <fstream>
 #include <iostream>
 #include <netinet/in.h>
-//#include <sstream>
 #include <string>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -643,10 +642,9 @@ int clientDel(char* message, std::string mailSpoolDir)
     return 1;
 }
 
-int clientLogin(char* message, std::string mailSpoolDir)
-{
+int clientLogin(char* message, std::string mailSpoolDir){
     std::string path = mailSpoolDir;
-    std::string message_line, username, password;
+    std::string message_line, ldapUser, ldapBindPassword;
     int state = 0;
     for (int i = 0; message[i] != '\0'; ++i) {
         if (message[i] != '\n') {
@@ -661,44 +659,86 @@ int clientLogin(char* message, std::string mailSpoolDir)
                     }
                     break;
                 case 1:
-                    // username
-                    username = message_line;
+                    // LDAP username
+                    ldapUser = message_line;
                     state = 2;
                     break;
                 case 2:
-                    // password
-                    password = message_line;
+                    // LDAP password
+                    ldapBindPassword = message_line;
             }
             message_line.clear();
         }
     }
+    // LDAP config
+    const char *ldapUri = "ldap://ldap.technikum-wien.at:389";
+    const int ldapVersion = LDAP_VERSION3;
 
-    // Start LDAP
-    LDAP* ldap;
-    int con = ldap_initialize(&ldap, "ldap://ldap.technikum.wien.at:389");
-    if (con != LDAP_SUCCESS) {
-        std::cout << "Error: LDAP connection failed!" << std::endl;
-    } else {
-        std::cout << "LDAP works!" << std::endl;
+    // Set username
+    char ldapBindUser[256];
+    sprintf(ldapBindUser, "uid=%s,ou=people,dc=technikum-wien,dc=at", ldapUser.c_str());
+    printf("user set to: %s\n", ldapBindUser);
+
+    // General
+    int rc = 0; // return code
+
+    // Setup LDAP connection
+    LDAP *ldapHandle;
+    rc = ldap_initialize(&ldapHandle, ldapUri);
+    if (rc != LDAP_SUCCESS)
+    {
+        fprintf(stderr, "ldap_init failed\n");
+        return -1;
+    }
+    printf("connected to LDAP server %s\n", ldapUri);
+
+    // LDAP set options
+    rc = ldap_set_option(
+        ldapHandle,
+        LDAP_OPT_PROTOCOL_VERSION, // OPTION
+        &ldapVersion);             // IN-Value
+    if (rc != LDAP_OPT_SUCCESS)
+    {
+        // https://www.openldap.org/software/man.cgi?query=ldap_err2string&sektion=3&apropos=0&manpath=OpenLDAP+2.4-Release
+        fprintf(stderr, "ldap_set_option(PROTOCOL_VERSION): %s\n", ldap_err2string(rc));
+        ldap_unbind_ext_s(ldapHandle, NULL, NULL);
+        return EXIT_FAILURE;
     }
 
-    // LDAP Login
-    int msgid;
-    berval cred;
-    cred.bv_val = (char*) password.c_str();
-    cred.bv_len = password.length();
-    std::string dn = "cn=" + username + ",dc=technikum-wien,dc=at";
-    int answ = ldap_sasl_bind(ldap, dn.c_str(), NULL, &cred, NULL, NULL, &msgid);
-    if (answ != LDAP_SUCCESS) {
-        std::cout << "Error: LDAP login failed!" << std::endl;
-    } else {
-        std::cout << "LDAP login works!" << std::endl;
+    // LDAP start connection secure (initialize TLS)
+    rc = ldap_start_tls_s(
+        ldapHandle,
+        NULL,
+        NULL);
+    if (rc != LDAP_SUCCESS)
+    {
+        fprintf(stderr, "ldap_start_tls_s(): %s\n", ldap_err2string(rc));
+        ldap_unbind_ext_s(ldapHandle, NULL, NULL);
+        return EXIT_FAILURE;
     }
 
-    //Close LDAP
-    ldap_unbind_ext(ldap, NULL, NULL);
-    return 1;
+    // LDAP bind credentials
+    BerValue bindCredentials;
+    bindCredentials.bv_val = (char*)ldapBindPassword.c_str();;
+    bindCredentials.bv_len = ldapBindPassword.length();
+    BerValue *servercredp; // server's credentials
+    rc = ldap_sasl_bind_s(
+        ldapHandle,
+        ldapBindUser,
+        LDAP_SASL_SIMPLE,
+        &bindCredentials,
+        NULL,
+        NULL,
+        &servercredp);
+    if (rc != LDAP_SUCCESS)
+    {
+        fprintf(stderr, "LDAP bind error: %s\n", ldap_err2string(rc));
+        ldap_unbind_ext_s(ldapHandle, NULL, NULL);
+        return EXIT_FAILURE;
+    }
+    return EXIT_SUCCESS;
 }
+
 
 void signalHandler(int sig)
 {
