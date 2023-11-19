@@ -16,6 +16,7 @@
 #include <ldap.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <fcntl.h>
 
 #define BUF 1024
 
@@ -399,9 +400,30 @@ std::string searchSubjects(std::string& username, std::string mailSpoolDir, int 
     s_path += "/";
     s_path += username;
     const char* path = s_path.c_str();
-    DIR* dirp = opendir(path);
+
+    // Open the directory as a file to acquire a lock
+    int dirfd = open(path, O_RDONLY);
+    if (dirfd == -1) {
+        perror("Failed to open directory");
+        return "0";
+    }
+
+    // Acquire an advisory lock on the directory
+    struct flock fl;
+    fl.l_type = F_RDLCK;  // Read lock
+    fl.l_whence = SEEK_SET;
+    fl.l_start = 0;
+    fl.l_len = 0;  // Lock the whole file
+    if (fcntl(dirfd, F_SETLKW, &fl) == -1) {  // F_SETLKW will block until the lock is acquired
+        perror("Failed to lock directory");
+        close(dirfd);
+        return "0";
+    }
+
+    DIR* dirp = fdopendir(dirfd);
     if (dirp == NULL) {
         perror("Failed to open directory");
+        close(dirfd);
         return "0";
     }
 
@@ -413,8 +435,13 @@ std::string searchSubjects(std::string& username, std::string mailSpoolDir, int 
         direntp = readdir(dirp);
     }
 
-    while (errno == EINTR) {
-        if (closedir(dirp) != -1) break;
+    // Release the lock and close the directory
+    fl.l_type = F_UNLCK;
+    if (fcntl(dirfd, F_SETLK, &fl) == -1) {
+        perror("Failed to unlock directory");
+    }
+    if (closedir(dirp) == -1) {
+        perror("Failed to close directory");
     }
 
     std::string output = std::to_string(subjects.size()) + "\n";
@@ -492,6 +519,27 @@ std::string clientRead(char* message, std::string mailSpoolDir)
                     }
                     path += "/";
                     path += file_name;
+
+                    // Open the file with a file descriptor for locking
+                    int fd = open(path.c_str(), O_RDONLY);
+                    if (fd == -1) {
+                        perror("Failed to open file");
+                        return "0";
+                    }
+
+                    // Acquire a read lock on the file
+                    struct flock fl;
+                    fl.l_type = F_RDLCK;
+                    fl.l_whence = SEEK_SET;
+                    fl.l_start = 0;
+                    fl.l_len = 0;
+                    if (fcntl(fd, F_SETLKW, &fl) == -1) {
+                        perror("Failed to lock file");
+                        close(fd);
+                        return "0";
+                    }
+
+                    // Now it's safe to read the file
                     file.open(path);
                     if (file.is_open()) {
                         while (std::getline(file, file_line)) {
@@ -500,8 +548,17 @@ std::string clientRead(char* message, std::string mailSpoolDir)
                         file.close();
                     } else {
                         std::cerr << "File could not be opened\n" << path;
+                        close(fd);
                         return "0";
                     }
+
+                    // Release the lock and close the file descriptor
+                    fl.l_type = F_UNLCK;
+                    if (fcntl(fd, F_SETLK, &fl) == -1) {
+                        perror("Failed to unlock file");
+                    }
+                    close(fd);
+
                     return content;
             }
             message_line.clear();
@@ -544,10 +601,40 @@ int clientDel(char* message, std::string mailSpoolDir)
                     }
                     path += "/";
                     path += file_name;
-                    if (remove(path.c_str()) != 0) {
-                        std::cerr << "Error deleting file";
+
+                    // Open the file with a file descriptor for locking
+                    int fd = open(path.c_str(), O_RDONLY);
+                    if (fd == -1) {
+                        perror("Failed to open file");
                         return 1;
                     }
+
+                    // Acquire a write lock on the file
+                    struct flock fl;
+                    fl.l_type = F_WRLCK;
+                    fl.l_whence = SEEK_SET;
+                    fl.l_start = 0;
+                    fl.l_len = 0;
+                    if (fcntl(fd, F_SETLKW, &fl) == -1) {
+                        perror("Failed to lock file");
+                        close(fd);
+                        return 1;
+                    }
+
+                    // Now it's safe to delete the file
+                    if (remove(path.c_str()) != 0) {
+                        std::cerr << "Error deleting file";
+                        close(fd);
+                        return 1;
+                    }
+
+                    // Release the lock and close the file descriptor
+                    fl.l_type = F_UNLCK;
+                    if (fcntl(fd, F_SETLK, &fl) == -1) {
+                        perror("Failed to unlock file");
+                    }
+                    close(fd);
+
                     return 0;
             }
             message_line.clear();
