@@ -287,7 +287,6 @@ void clientCommunication(int* data, std::string mailSpoolDir, std::string userIP
 std::string messageHandler(char* buffer, std::string mailSpoolDir, std::string userIP, std::string userName)
 {
     std::string option;
-    int loggedIn = 0;
     for (int i = 0; buffer[i] != '\0'; ++i) {
         if (buffer[i] != '\n') {
             option += buffer[i];
@@ -330,6 +329,9 @@ std::string messageHandler(char* buffer, std::string mailSpoolDir, std::string u
                     return "ERR\n";
                 } else {
                     loginFailed = 0;
+                    for (int j = 0; buffer[j] != '\0' && buffer[j] != '\n'; ++j) {
+                            userName += buffer[j];
+                    }
                     return userName;
                 }
             } else if (option == "QUIT") {
