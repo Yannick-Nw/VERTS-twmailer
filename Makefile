@@ -19,7 +19,7 @@
 #           These are HP-UX specific flags.
 #############################################################################################
 CC = g++
-CFLAGS = -g -Wall -Wextra -Werror -O -std=c++14 -pthread
+CFLAGS = -g -Wall -Wextra -O -std=c++14 -pthread
 LIBS = -lldap -llber
 
 rebuild: clean all
