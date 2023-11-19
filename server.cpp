@@ -353,7 +353,7 @@ int createDirectory(std::string& pathname)
         // If stat returns an error, the directory does not exist and can be created
         if (mkdir(path, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) == -1) {
             std::cerr << "Error creating directory\n";
-            return 1;
+            return 0;
         }
     } else if (info.st_mode & S_IFDIR) {
         // If the directory exists, output a message
