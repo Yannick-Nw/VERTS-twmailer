@@ -87,7 +87,7 @@ int main(int argc, char** argv)
         buffer[size] = '\0';
         printf("%s", buffer); // ignore error
     }
-
+    
     do {
         std::string line;
         printf("Command: ");
@@ -126,24 +126,28 @@ int main(int argc, char** argv)
             message += ".\n";
         } else if (command == "LIST") {
             message = "LIST\n";
+            /*
             printf("Username: ");
             std::getline(std::cin, line);
             message += line + "\n";
+            */
         } else if (command == "READ") {
             message = "READ\n";
+            /*
             printf("Username: ");
             std::getline(std::cin, line);
             message += line + "\n";
-
+            */
             printf("Message-Number: ");
             std::getline(std::cin, line);
             message += line + "\n";
         } else if (command == "DEL") {
             message = "DEL\n";
+            /*
             printf("Username: ");
             std::getline(std::cin, line);
             message += line + "\n";
-
+            */
             printf("Message-Number: ");
             std::getline(std::cin, line);
             message += line + "\n";
