@@ -11,10 +11,11 @@
 #include <string>
 #include <sys/socket.h>
 #include <sys/stat.h>
-//#include <sys/types.h>
 #include <unistd.h>
 #include <vector>
 #include <ldap.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 #define BUF 1024
 
@@ -138,8 +139,36 @@ int main(int argc, char* argv[])
 
         std::cout << "Client connected from " << inet_ntoa(client_address.sin_addr) << ":"
                   << ntohs(client_address.sin_port) << "...\n";
-        clientCommunication(&new_socket, mailSpoolDir);
-        new_socket = -1;
+
+        // Create a new process for each client connection
+        pid_t pid = fork();
+        if (pid < 0) {
+            std::perror("fork error");
+            return EXIT_FAILURE;
+        } else if (pid == 0) {  // Child process
+            if (create_socket != -1) {
+                if (shutdown(create_socket, SHUT_RDWR) == -1) {
+                    std::perror("shutdown create_socket");
+                }
+                if (close(create_socket) == -1) {
+                    std::perror("close create_socket");
+                }
+                create_socket = -1;
+            }
+            clientCommunication(&new_socket, mailSpoolDir);
+            if (new_socket != -1) {
+                if (shutdown(new_socket, SHUT_RDWR) == -1) {
+                    std::perror("shutdown new_socket");
+                }
+                if (close(new_socket) == -1) {
+                    std::perror("close new_socket");
+                }
+                new_socket = -1;
+            }
+            return EXIT_SUCCESS;  // End the child process
+        } else {  // Parent process
+            close(new_socket);  // Close the client socket in the parent process
+        }
     }
 
     // Close the socket after all connections have been handled
@@ -152,6 +181,9 @@ int main(int argc, char* argv[])
         }
         create_socket = -1;
     }
+
+    // Wait for all remaining child processes
+    while (wait(NULL) > 0);
 
     return EXIT_SUCCESS;
 }
@@ -264,7 +296,7 @@ std::string messageHandler(char* buffer, std::string mailSpoolDir)
                     return "OK\n";
                 }
             } else if (option == "LOGIN") {
-                if (clientLogin(buffer, mailSpoolDir)){
+                if (clientLogin(buffer, mailSpoolDir)) {
                     return "ERR\n";
                 } else {
                     return "OK\n";
@@ -555,7 +587,7 @@ int clientLogin(char* message, std::string mailSpoolDir)
     }
 
     // Start LDAP
-    LDAP *ldap;
+    LDAP* ldap;
     int con = ldap_initialize(&ldap, "ldap://ldap.technikum.wien.at:389");
     if (con != LDAP_SUCCESS) {
         std::cout << "Error: LDAP connection failed!" << std::endl;
@@ -566,7 +598,7 @@ int clientLogin(char* message, std::string mailSpoolDir)
     // LDAP Login
     int msgid;
     berval cred;
-    cred.bv_val = (char*)password.c_str();
+    cred.bv_val = (char*) password.c_str();
     cred.bv_len = password.length();
     std::string dn = "cn=" + username + ",dc=technikum-wien,dc=at";
     int answ = ldap_sasl_bind(ldap, dn.c_str(), NULL, &cred, NULL, NULL, &msgid);
@@ -606,6 +638,14 @@ void signalHandler(int sig)
                 std::perror("close create_socket");
             }
             create_socket = -1;
+        }
+    } else if (sig == SIGCHLD) {
+        // Clean up zombie processes
+        pid_t childpid;
+        while ((childpid = waitpid(-1, NULL, WNOHANG)) > 0) {
+            if ((childpid == -1) && (errno != EINTR)) {
+                break;
+            }
         }
     } else {
         exit(sig);
