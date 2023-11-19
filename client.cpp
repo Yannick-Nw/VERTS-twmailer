@@ -11,7 +11,6 @@
 #include <termios.h>
 
 #define BUF 1024
-#define PORT 6543
 
 int read_input(char* buffer, std::string message)
 {
@@ -41,12 +40,16 @@ void enableEcho() {
 
 int main(int argc, char** argv)
 {
+    if (argc != 3) {
+        printf("Usage: ./twmailer-client <ip> <port>\n");
+        return EXIT_FAILURE;
+    }
+
     int create_socket;
     char buffer[BUF];
     struct sockaddr_in address;
     int size;
     int isQuit;
-    //int sending = 0;
     std::string message = "";
 
     // IPv4, TCP (connection oriented), IP (same as server)
@@ -58,12 +61,8 @@ int main(int argc, char** argv)
     // Attention: network byte order => big endian
     memset(&address, 0, sizeof(address)); // init storage with 0
     address.sin_family = AF_INET;         // IPv4
-    address.sin_port = htons(PORT);
-    if (argc < 2) {
-        inet_aton("127.0.0.1", &address.sin_addr);
-    } else {
+    address.sin_port = htons(atoi(argv[2]));
         inet_aton(argv[1], &address.sin_addr);
-    }
 
     // CREATE A CONNECTION
     if (connect(create_socket,
