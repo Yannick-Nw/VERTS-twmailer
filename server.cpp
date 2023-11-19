@@ -13,20 +13,23 @@
 #include <unistd.h>
 #include <vector>
 #include <ldap.h>
+#include <map>
 
 #define BUF 1024
 
 bool abortRequested = false;
 int create_socket = -1;
 int new_socket = -1;
+std::map<std::string, time_t> blacklist;
+int loginFailed = 0;
 
-void clientCommunication(int* data, std::string mailSpoolDir);
+void clientCommunication(int* data, std::string mailSpoolDir, std::string userIP);
 
 // Signal handler for SIGINT (Ctrl+C)
 void signalHandler(int sig);
 
 // Function to handle client's messages
-std::string messageHandler(char* buffer, std::string mailSpoolDir);
+std::string messageHandler(char* buffer, std::string mailSpoolDir, std::string userIP);
 
 // Function to create a directory
 int createDirectory(std::string& path);
@@ -48,6 +51,12 @@ std::string searchSubjects(std::string& username, std::string mailSpoolDir, int 
 
 // Function to login client
 int clientLogin(char* message, std::string mailSpoolDir);
+
+// Function to blacklist a user
+void blacklistUser(std::string userIP);
+
+// Function to check if a user is blacklisted
+bool checkBlacklist(std::string userIP);
 
 // Main function
 int main(int argc, char* argv[])
@@ -136,7 +145,7 @@ int main(int argc, char* argv[])
 
         std::cout << "Client connected from " << inet_ntoa(client_address.sin_addr) << ":"
                   << ntohs(client_address.sin_port) << "...\n";
-        clientCommunication(&new_socket, mailSpoolDir);
+        clientCommunication(&new_socket, mailSpoolDir, inet_ntoa(client_address.sin_addr));
         new_socket = -1;
     }
 
@@ -154,7 +163,7 @@ int main(int argc, char* argv[])
     return EXIT_SUCCESS;
 }
 
-void clientCommunication(int* data, std::string mailSpoolDir)
+void clientCommunication(int* data, std::string mailSpoolDir, std::string userIP)
 {
     char buffer[BUF];
     //int* current_socket = (int*) data;
@@ -200,7 +209,7 @@ void clientCommunication(int* data, std::string mailSpoolDir)
             std::cerr << "mail-spool-directoryname error\n";
             return;
         }
-        std::string s_answer = messageHandler(buffer, path);
+        std::string s_answer = messageHandler(buffer, path, userIP);
         if (s_answer != "QUIT") {
             const char* answer = s_answer.c_str();
             int totalBytesSent = 0;
@@ -233,7 +242,7 @@ void clientCommunication(int* data, std::string mailSpoolDir)
     }
 }
 
-std::string messageHandler(char* buffer, std::string mailSpoolDir)
+std::string messageHandler(char* buffer, std::string mailSpoolDir, std::string userIP)
 {
     std::string option;
     for (int i = 0; buffer[i] != '\0'; ++i) {
@@ -262,9 +271,20 @@ std::string messageHandler(char* buffer, std::string mailSpoolDir)
                     return "OK\n";
                 }
             } else if (option == "LOGIN") {
+                if (checkBlacklist(userIP)){
+                    std::cout << "Login blocked. Blacklisted user." << std::endl;
+                    return "ERR\n";
+                }
                 if (clientLogin(buffer, mailSpoolDir)){
+                    loginFailed++;
+                    if (loginFailed >= 3){
+                        blacklistUser(userIP);
+                        loginFailed = 0;
+                        std::cout << "Login blocked. Add user to blacklist." << std::endl;
+                    }
                     return "ERR\n";
                 } else {
+                    loginFailed = 0;
                     return "OK\n";
                 }
             } else if (option == "QUIT") {
@@ -649,4 +669,27 @@ void signalHandler(int sig)
     } else {
         exit(sig);
     }
+}
+
+void blacklistUser(std::string userIP){
+    time_t currentTime;
+    time(&currentTime);
+    blacklist[userIP] = currentTime;
+}
+
+bool checkBlacklist(std::string userIP){
+    auto entry = blacklist.find(userIP);
+    if (entry == blacklist.end()) {  
+        return false;
+    } 
+
+    time_t blacklistTime = entry->second;
+    time_t currentTime;
+    time(&currentTime);
+
+    if((currentTime - blacklistTime) < 60){
+        return true;
+    }
+
+    return false;
 }
