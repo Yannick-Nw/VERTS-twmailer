@@ -87,7 +87,7 @@ int main(int argc, char** argv)
         buffer[size] = '\0';
         printf("%s", buffer); // ignore error
     }
-    
+
     do {
         std::string line;
         printf("Command: ");
